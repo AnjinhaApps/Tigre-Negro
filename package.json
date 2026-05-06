@@ -1,0 +1,15 @@
+{
+  "name": "tigre-negro-bot",
+  "version": "1.0.0",
+  "description": "Bot completo de filas, pagamentos e tickets",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "Tigre Negro",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "@discordjs/rest": "^2.3.0"
+  }
+}
