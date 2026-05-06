@@ -34,7 +34,18 @@ let db = {
   mediadorRole: "",
   canalPagamentos: "",
   canalFilas: "",
-  canalAnuncios: ""
+  canalAnuncios: "",
+
+  ticket: {
+    canalPainel: "",
+    titulo: "🎫 Sistema de Tickets",
+    mensagem: "Clique no botão abaixo para abrir um ticket de suporte.",
+    imagem: "",
+    botaoLabel: "🎫 Abrir Ticket",
+    botaoEmoji: "🎫",
+    botaoCor: "Danger",
+    categoria: ""
+  }
 };
 
 if (fs.existsSync('./database.json')) {
@@ -45,8 +56,52 @@ if (fs.existsSync('./database.json')) {
   }
 }
 
+if (!db.ticket) {
+  db.ticket = {
+    canalPainel: "",
+    titulo: "🎫 Sistema de Tickets",
+    mensagem: "Clique no botão abaixo para abrir um ticket de suporte.",
+    imagem: "",
+    botaoLabel: "🎫 Abrir Ticket",
+    botaoEmoji: "🎫",
+    botaoCor: "Danger",
+    categoria: ""
+  };
+}
+
 function salvarDB() {
   fs.writeFileSync('./database.json', JSON.stringify(db, null, 2));
+}
+
+function estiloBotaoTicket() {
+  const estilos = {
+    Primary: ButtonStyle.Primary,
+    Secondary: ButtonStyle.Secondary,
+    Success: ButtonStyle.Success,
+    Danger: ButtonStyle.Danger
+  };
+
+  return estilos[db.ticket.botaoCor] || ButtonStyle.Danger;
+}
+
+function montarPainelTicket() {
+  const embed = new EmbedBuilder()
+    .setTitle(db.ticket.titulo || "🎫 Sistema de Tickets")
+    .setDescription(db.ticket.mensagem || "Clique no botão abaixo para abrir um ticket de suporte.")
+    .setColor("Orange");
+
+  if (db.ticket.imagem) {
+    embed.setImage(db.ticket.imagem);
+  }
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("abrir_ticket")
+      .setLabel(db.ticket.botaoLabel || "Abrir Ticket")
+      .setStyle(estiloBotaoTicket())
+  );
+
+  return { embeds: [embed], components: [row] };
 }
 
 function somenteAdmin(interaction) {
@@ -94,6 +149,8 @@ const commands = [
 ].map(command => command.toJSON());
 
 // ===== REGISTRAR COMANDOS =====
+// Isso mantém os comandos no servidor configurado e também registra comandos globais.
+// Os comandos globais ajudam o Discord a reconhecer o bot como "Compatível com comandos".
 const rest = new REST({ version: '10' }).setToken(config.token);
 
 (async () => {
@@ -103,14 +160,28 @@ const rest = new REST({ version: '10' }).setToken(config.token);
       return;
     }
 
-    console.log('Registrando comandos slash...');
+    console.log('Registrando comandos slash no servidor...');
 
+    // Comandos do servidor: aparecem mais rápido no servidor configurado.
     await rest.put(
       Routes.applicationGuildCommands(config.clientId, config.guildId),
       { body: commands }
     );
 
-    console.log('Comandos registrados com sucesso!');
+    console.log('Comandos do servidor registrados com sucesso!');
+
+    console.log('Registrando comandos slash globais...');
+
+    // Comandos globais: ajudam o app/bot a exibir a insígnia "Compatível com comandos".
+    // Pode levar alguns minutos para aparecer em todos os servidores.
+    await rest.put(
+      Routes.applicationCommands(config.clientId),
+      { body: commands }
+    );
+
+    console.log('Comandos globais registrados com sucesso!');
+    console.log('Para a insígnia aparecer, convide o bot com os escopos: bot e applications.commands.');
+    console.log(`Link de convite sugerido: https://discord.com/oauth2/authorize?client_id=${config.clientId}&permissions=8&scope=bot%20applications.commands`);
   } catch (err) {
     console.log('Erro ao registrar comandos:', err);
   }
@@ -245,21 +316,60 @@ client.on('interactionCreate', async interaction => {
 
       // /TICKET
       if (interaction.commandName === 'ticket') {
-        const embed = new EmbedBuilder()
-          .setTitle('🎫 Sistema de Tickets')
-          .setDescription('Clique no botão abaixo para abrir um ticket de suporte.')
-          .setColor('Orange');
+        if (!somenteAdmin(interaction)) {
+          return interaction.reply({
+            content: '❌ Apenas administradores podem configurar o painel de tickets.',
+            ephemeral: true
+          });
+        }
 
-        const row = new ActionRowBuilder().addComponents(
+        const embed = new EmbedBuilder()
+          .setTitle('🎫 Configurar Painel de Tickets')
+          .setDescription(
+            'Personalize o painel de tickets usando os botões abaixo.\n\n' +
+            `📌 **Canal do painel:** ${db.ticket.canalPainel ? `<#${db.ticket.canalPainel}>` : '`Não configurado`'}\n` +
+            `📝 **Título:** ${db.ticket.titulo || '`Não configurado`'}\n` +
+            `💬 **Mensagem:** ${db.ticket.mensagem || '`Não configurada`'}\n` +
+            `🖼️ **Imagem:** ${db.ticket.imagem ? db.ticket.imagem : '`Não configurada`'}\n` +
+            `🔘 **Botão:** ${db.ticket.botaoLabel || '`Não configurado`'}\n` +
+            `🎨 **Cor do botão:** ${db.ticket.botaoCor || '`Danger`'}`
+          )
+          .setColor('#ff9900')
+          .setFooter({ text: 'Depois de configurar, clique em Enviar Painel.' });
+
+        const row1 = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
-            .setCustomId('abrir_ticket')
-            .setLabel('🎫 Abrir Ticket')
+            .setCustomId('ticket_config_canal')
+            .setLabel('📌 Canal')
+            .setStyle(ButtonStyle.Primary),
+
+          new ButtonBuilder()
+            .setCustomId('ticket_config_texto')
+            .setLabel('📝 Texto e imagem')
+            .setStyle(ButtonStyle.Secondary),
+
+          new ButtonBuilder()
+            .setCustomId('ticket_config_botao')
+            .setLabel('🔘 Botão')
+            .setStyle(ButtonStyle.Success)
+        );
+
+        const row2 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('ticket_preview')
+            .setLabel('👀 Prévia')
+            .setStyle(ButtonStyle.Secondary),
+
+          new ButtonBuilder()
+            .setCustomId('ticket_enviar_painel')
+            .setLabel('📨 Enviar Painel')
             .setStyle(ButtonStyle.Danger)
         );
 
         return interaction.reply({
           embeds: [embed],
-          components: [row]
+          components: [row1, row2],
+          ephemeral: true
         });
       }
 
@@ -411,6 +521,152 @@ client.on('interactionCreate', async interaction => {
         );
 
         return interaction.showModal(modal);
+      }
+
+      // CONFIG TICKET - CANAL
+      if (interaction.customId === 'ticket_config_canal') {
+        if (!somenteAdmin(interaction)) {
+          return interaction.reply({
+            content: '❌ Apenas administradores.',
+            ephemeral: true
+          });
+        }
+
+        const modal = new ModalBuilder()
+          .setCustomId('modal_ticket_canal')
+          .setTitle('Canal do Painel de Tickets');
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('canal')
+              .setLabel('ID do canal onde o painel será enviado')
+              .setPlaceholder('Exemplo: 123456789012345678')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+
+        return interaction.showModal(modal);
+      }
+
+      // CONFIG TICKET - TEXTO E IMAGEM
+      if (interaction.customId === 'ticket_config_texto') {
+        if (!somenteAdmin(interaction)) {
+          return interaction.reply({
+            content: '❌ Apenas administradores.',
+            ephemeral: true
+          });
+        }
+
+        const modal = new ModalBuilder()
+          .setCustomId('modal_ticket_texto')
+          .setTitle('Texto do Painel de Tickets');
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('titulo')
+              .setLabel('Título do painel')
+              .setPlaceholder('Exemplo: 🎫 Atendimento')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('mensagem')
+              .setLabel('Mensagem do painel')
+              .setPlaceholder('Explique aqui como o usuário deve abrir ticket.')
+              .setStyle(TextInputStyle.Paragraph)
+              .setRequired(true)
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('imagem')
+              .setLabel('URL da imagem, banner ou GIF')
+              .setPlaceholder('https://exemplo.com/imagem.png')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(false)
+          )
+        );
+
+        return interaction.showModal(modal);
+      }
+
+      // CONFIG TICKET - BOTÃO
+      if (interaction.customId === 'ticket_config_botao') {
+        if (!somenteAdmin(interaction)) {
+          return interaction.reply({
+            content: '❌ Apenas administradores.',
+            ephemeral: true
+          });
+        }
+
+        const modal = new ModalBuilder()
+          .setCustomId('modal_ticket_botao')
+          .setTitle('Botão do Painel');
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('label')
+              .setLabel('Nome do botão')
+              .setPlaceholder('Exemplo: Abrir Ticket')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('cor')
+              .setLabel('Cor: Primary, Secondary, Success ou Danger')
+              .setPlaceholder('Danger')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+
+        return interaction.showModal(modal);
+      }
+
+      // PRÉVIA DO PAINEL DE TICKETS
+      if (interaction.customId === 'ticket_preview') {
+        return interaction.reply({
+          ...montarPainelTicket(),
+          ephemeral: true
+        });
+      }
+
+      // ENVIAR PAINEL DE TICKETS
+      if (interaction.customId === 'ticket_enviar_painel') {
+        if (!somenteAdmin(interaction)) {
+          return interaction.reply({
+            content: '❌ Apenas administradores.',
+            ephemeral: true
+          });
+        }
+
+        if (!db.ticket.canalPainel) {
+          return interaction.reply({
+            content: '❌ Configure primeiro o canal onde o painel será enviado.',
+            ephemeral: true
+          });
+        }
+
+        const canal = interaction.guild.channels.cache.get(db.ticket.canalPainel);
+
+        if (!canal) {
+          return interaction.reply({
+            content: '❌ Canal não encontrado. Verifique o ID configurado.',
+            ephemeral: true
+          });
+        }
+
+        await canal.send(montarPainelTicket());
+
+        return interaction.reply({
+          content: `✅ Painel de tickets enviado em ${canal}!`,
+          ephemeral: true
+        });
       }
 
       // CADASTRO NORMAL
@@ -575,6 +831,45 @@ client.on('interactionCreate', async interaction => {
 
     // ===== MODAIS =====
     if (interaction.type === InteractionType.ModalSubmit) {
+
+      // SALVAR CANAL DO PAINEL DE TICKETS
+      if (interaction.customId === 'modal_ticket_canal') {
+        db.ticket.canalPainel = interaction.fields.getTextInputValue('canal');
+        salvarDB();
+
+        return interaction.reply({
+          content: '✅ Canal do painel de tickets salvo com sucesso!',
+          ephemeral: true
+        });
+      }
+
+      // SALVAR TEXTO E IMAGEM DO PAINEL DE TICKETS
+      if (interaction.customId === 'modal_ticket_texto') {
+        db.ticket.titulo = interaction.fields.getTextInputValue('titulo');
+        db.ticket.mensagem = interaction.fields.getTextInputValue('mensagem');
+        db.ticket.imagem = interaction.fields.getTextInputValue('imagem') || '';
+        salvarDB();
+
+        return interaction.reply({
+          content: '✅ Texto e imagem do painel de tickets salvos com sucesso!',
+          ephemeral: true
+        });
+      }
+
+      // SALVAR BOTÃO DO PAINEL DE TICKETS
+      if (interaction.customId === 'modal_ticket_botao') {
+        const cor = interaction.fields.getTextInputValue('cor');
+        const coresPermitidas = ['Primary', 'Secondary', 'Success', 'Danger'];
+
+        db.ticket.botaoLabel = interaction.fields.getTextInputValue('label');
+        db.ticket.botaoCor = coresPermitidas.includes(cor) ? cor : 'Danger';
+        salvarDB();
+
+        return interaction.reply({
+          content: '✅ Botão do painel de tickets salvo com sucesso!',
+          ephemeral: true
+        });
+      }
 
       // SALVAR PIX
       if (interaction.customId === 'modal_pix') {
