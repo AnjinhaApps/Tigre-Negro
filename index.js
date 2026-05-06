@@ -18,9 +18,9 @@ const fs = require('fs');
 
 // ===== CONFIG =====
 const config = {
-  token: "MTUwMTM5NjE2NTE4MTMxMzE1NA.GhsmVX.m20cd8oEUuBQp747uIP5W-Wxkr0TwYOuFbDUII",
-  clientId: "1498726248229244938",
-  guildId: "1500672576148738128"
+  token: process.env.TOKEN,
+  clientId: process.env.CLIENT_ID,
+  guildId: process.env.GUILD_ID
 };
 
 // ===== DATABASE =====
