@@ -45,7 +45,19 @@ let db = {
     botaoEmoji: "🎫",
     botaoCor: "Danger",
     categoria: ""
-  }
+  },
+
+  ap: {
+    canalPainel: "",
+    mensagem: "FILAS ON",
+    equipe: "1v1",
+    dispositivo: "Mobile",
+    valorMin: 0.30,
+    valorMax: 1.00,
+    imagem: ""
+  },
+
+  filas: {}
 };
 
 if (fs.existsSync('./database.json')) {
@@ -67,6 +79,22 @@ if (!db.ticket) {
     botaoCor: "Danger",
     categoria: ""
   };
+}
+
+if (!db.ap) {
+  db.ap = {
+    canalPainel: "",
+    mensagem: "FILAS ON",
+    equipe: "1v1",
+    dispositivo: "Mobile",
+    valorMin: 0.30,
+    valorMax: 1.00,
+    imagem: ""
+  };
+}
+
+if (!db.filas) {
+  db.filas = {};
 }
 
 function salvarDB() {
@@ -104,6 +132,198 @@ function montarPainelTicket() {
   return { embeds: [embed], components: [row] };
 }
 
+
+function formatarValorBR(valor) {
+  return `R$ ${Number(valor).toFixed(2).replace('.', ',')}`;
+}
+
+function chaveValor(valor) {
+  return Number(valor).toFixed(2).replace('.', '_');
+}
+
+function gerarValoresPainel(min, max) {
+  const valores = [];
+  let atual = Number(min);
+
+  if (Number.isNaN(atual) || Number.isNaN(Number(max))) return valores;
+  if (atual <= 0 || Number(max) < atual) return valores;
+
+  while (atual <= Number(max) + 0.0001) {
+    valores.push(Number(atual.toFixed(2)));
+
+    if (atual < 1) {
+      atual += 0.20;
+    } else if (atual < 10) {
+      atual += 1;
+    } else if (atual < 50) {
+      atual += 10;
+    } else {
+      atual += 50;
+    }
+  }
+
+  return valores;
+}
+
+function normalizarEquipe(equipe) {
+  const valor = String(equipe || "1v1").toLowerCase().replace(/\s/g, "");
+  const permitidos = ["1v1", "2v2", "3v3", "4v4"];
+  return permitidos.includes(valor) ? valor : "1v1";
+}
+
+function normalizarDispositivo(dispositivo) {
+  const valor = String(dispositivo || "Mobile").toLowerCase();
+
+  if (valor.includes("pc")) return "PC";
+  if (valor.includes("misto")) return "Misto";
+  return "Mobile";
+}
+
+function montarIdFila(equipe, dispositivo, valor) {
+  return `${normalizarEquipe(equipe)}_${normalizarDispositivo(dispositivo).toLowerCase()}_${chaveValor(valor)}`;
+}
+
+function obterFila(id) {
+  if (!db.filas[id]) {
+    db.filas[id] = {
+      jogadores: {}
+    };
+  }
+
+  if (!db.filas[id].jogadores) {
+    db.filas[id].jogadores = {};
+  }
+
+  return db.filas[id];
+}
+
+function textoJogadoresFila(fila) {
+  const entradas = Object.entries(fila.jogadores || {});
+
+  if (entradas.length === 0) {
+    return "Sem jogadores...";
+  }
+
+  return entradas
+    .map(([userId, botao]) => `<@${userId}> — \`${botao}\``)
+    .join("\\n");
+}
+
+function montarPainelAP({ equipe, dispositivo, valor, filaId }) {
+  const fila = obterFila(filaId);
+  const dispositivoFinal = normalizarDispositivo(dispositivo);
+  const equipeFinal = normalizarEquipe(equipe);
+
+  const embed = new EmbedBuilder()
+    .setTitle(`${equipeFinal} | Fila`)
+    .setDescription(
+      `📱 Formato: \`${equipeFinal} ${dispositivoFinal}\`\\n` +
+      `💰 Preço: \`${formatarValorBR(valor)}\`\\n\\n` +
+      `👑 **Jogadores**\\n${textoJogadoresFila(fila)}`
+    )
+    .setColor("#00d4d8");
+
+  if (db.ap.imagem) {
+    embed.setThumbnail(db.ap.imagem);
+  }
+
+  const botoes = [
+    new ButtonBuilder()
+      .setCustomId(`ap_join_${filaId}_Normal`)
+      .setLabel("Normal")
+      .setEmoji("📱")
+      .setStyle(ButtonStyle.Success),
+
+    new ButtonBuilder()
+      .setCustomId(`ap_join_${filaId}_Full_Ump_Xm8`)
+      .setLabel("Full Ump Xm8")
+      .setEmoji("🔫")
+      .setStyle(ButtonStyle.Success)
+  ];
+
+  if (dispositivoFinal === "Mobile") {
+    botoes.push(
+      new ButtonBuilder()
+        .setCustomId(`ap_join_${filaId}_Mobilador`)
+        .setLabel("Mobilador")
+        .setEmoji("📚")
+        .setStyle(ButtonStyle.Success)
+    );
+  }
+
+  botoes.push(
+    new ButtonBuilder()
+      .setCustomId(`ap_sair_${filaId}`)
+      .setLabel("Sair")
+      .setEmoji("➡️")
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  const row = new ActionRowBuilder().addComponents(botoes);
+
+  return { embeds: [embed], components: [row] };
+}
+
+function montarPainelConfigAP() {
+  const embed = new EmbedBuilder()
+    .setTitle("🎮 Configurar Painel de AP")
+    .setDescription(
+      "Configure os painéis de filas/AP usando os botões abaixo.\\n\\n" +
+      `📌 **Canal:** ${db.ap.canalPainel ? `<#${db.ap.canalPainel}>` : "`Não configurado`"}\\n` +
+      `📝 **Mensagem:** ${db.ap.mensagem || "`Não configurada`"}\\n` +
+      `👥 **Equipe:** ${db.ap.equipe || "`1v1`"}\\n` +
+      `📱 **Dispositivo:** ${db.ap.dispositivo || "`Mobile`"}\\n` +
+      `💰 **Valor mínimo:** ${formatarValorBR(db.ap.valorMin || 0.30)}\\n` +
+      `💰 **Valor máximo:** ${formatarValorBR(db.ap.valorMax || 1.00)}\\n` +
+      `🖼️ **Imagem:** ${db.ap.imagem || "`Não configurada`"}`
+    )
+    .setColor("#00d4d8")
+    .setFooter({ text: "Depois de configurar, clique em Enviar Painéis." });
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("ap_config_mensagem")
+      .setLabel("Editar mensagem")
+      .setEmoji("📝")
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId("ap_config_equipe")
+      .setLabel("Editar equipe")
+      .setEmoji("👥")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId("ap_config_dispositivo")
+      .setLabel("Dispositivo")
+      .setEmoji("📱")
+      .setStyle(ButtonStyle.Success)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("ap_config_valores")
+      .setLabel("Valores")
+      .setEmoji("💰")
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId("ap_config_canal")
+      .setLabel("Editar canal")
+      .setEmoji("📌")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId("ap_enviar_paineis")
+      .setLabel("Enviar painéis")
+      .setEmoji("📨")
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  return { embeds: [embed], components: [row1, row2] };
+}
+
+
 function somenteAdmin(interaction) {
   return interaction.member.permissions.has(PermissionsBitField.Flags.Administrator);
 }
@@ -121,19 +341,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('painel')
-    .setDescription('Criar painel de fila')
-    .addStringOption(option =>
-      option
-        .setName('dispositivo')
-        .setDescription('PC / Mobile / Misto')
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName('equipe')
-        .setDescription('1v1, 2v2, 3v3...')
-        .setRequired(true)
-    ),
+    .setDescription('Configurar e enviar painéis de AP/filas'),
 
   new SlashCommandBuilder()
     .setName('pagamento')
@@ -288,29 +496,16 @@ client.on('interactionCreate', async interaction => {
 
       // /PAINEL
       if (interaction.commandName === 'painel') {
-        const dispositivo = interaction.options.getString('dispositivo');
-        const equipe = interaction.options.getString('equipe');
-
-        const embed = new EmbedBuilder()
-          .setTitle('🎮 Fila Aberta')
-          .setDescription(
-            `📱 **Dispositivo:** ${dispositivo}\n` +
-            `👥 **Equipe:** ${equipe}\n\n` +
-            'Clique no botão abaixo para entrar na fila.'
-          )
-          .setColor('Blue')
-          .setFooter({ text: 'Boa sorte!' });
-
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`entrar_fila_${dispositivo}_${equipe}`)
-            .setLabel('✅ Entrar na fila')
-            .setStyle(ButtonStyle.Success)
-        );
+        if (!somenteAdmin(interaction)) {
+          return interaction.reply({
+            content: '❌ Apenas administradores podem configurar os painéis.',
+            ephemeral: true
+          });
+        }
 
         return interaction.reply({
-          embeds: [embed],
-          components: [row]
+          ...montarPainelConfigAP(),
+          ephemeral: true
         });
       }
 
@@ -390,6 +585,255 @@ client.on('interactionCreate', async interaction => {
 
     // ===== BOTÕES =====
     if (interaction.isButton()) {
+
+      // PAINEL AP - EDITAR MENSAGEM
+      if (interaction.customId === 'ap_config_mensagem') {
+        if (!somenteAdmin(interaction)) {
+          return interaction.reply({ content: '❌ Apenas administradores.', ephemeral: true });
+        }
+
+        const modal = new ModalBuilder()
+          .setCustomId('modal_ap_mensagem')
+          .setTitle('Editar mensagem do AP');
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('mensagem')
+              .setLabel('Mensagem enviada junto dos painéis')
+              .setPlaceholder('Exemplo: FILAS ON')
+              .setValue(db.ap.mensagem || 'FILAS ON')
+              .setStyle(TextInputStyle.Paragraph)
+              .setRequired(true)
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('imagem')
+              .setLabel('URL da imagem/thumbnail')
+              .setPlaceholder('Opcional')
+              .setValue(db.ap.imagem || '')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(false)
+          )
+        );
+
+        return interaction.showModal(modal);
+      }
+
+      // PAINEL AP - EDITAR EQUIPE
+      if (interaction.customId === 'ap_config_equipe') {
+        if (!somenteAdmin(interaction)) {
+          return interaction.reply({ content: '❌ Apenas administradores.', ephemeral: true });
+        }
+
+        const modal = new ModalBuilder()
+          .setCustomId('modal_ap_equipe')
+          .setTitle('Editar equipe');
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('equipe')
+              .setLabel('Equipe: 1v1, 2v2, 3v3 ou 4v4')
+              .setPlaceholder('Exemplo: 1v1')
+              .setValue(db.ap.equipe || '1v1')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+
+        return interaction.showModal(modal);
+      }
+
+      // PAINEL AP - DISPOSITIVO
+      if (interaction.customId === 'ap_config_dispositivo') {
+        if (!somenteAdmin(interaction)) {
+          return interaction.reply({ content: '❌ Apenas administradores.', ephemeral: true });
+        }
+
+        const modal = new ModalBuilder()
+          .setCustomId('modal_ap_dispositivo')
+          .setTitle('Editar dispositivo');
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('dispositivo')
+              .setLabel('Dispositivo: PC, Mobile ou Misto')
+              .setPlaceholder('Mobile')
+              .setValue(db.ap.dispositivo || 'Mobile')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+
+        return interaction.showModal(modal);
+      }
+
+      // PAINEL AP - VALORES
+      if (interaction.customId === 'ap_config_valores') {
+        if (!somenteAdmin(interaction)) {
+          return interaction.reply({ content: '❌ Apenas administradores.', ephemeral: true });
+        }
+
+        const modal = new ModalBuilder()
+          .setCustomId('modal_ap_valores')
+          .setTitle('Editar valores');
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('minimo')
+              .setLabel('Valor mínimo')
+              .setPlaceholder('Exemplo: 0,30')
+              .setValue(String(db.ap.valorMin || 0.30).replace('.', ','))
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('maximo')
+              .setLabel('Valor máximo')
+              .setPlaceholder('Exemplo: 100')
+              .setValue(String(db.ap.valorMax || 1).replace('.', ','))
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+
+        return interaction.showModal(modal);
+      }
+
+      // PAINEL AP - CANAL
+      if (interaction.customId === 'ap_config_canal') {
+        if (!somenteAdmin(interaction)) {
+          return interaction.reply({ content: '❌ Apenas administradores.', ephemeral: true });
+        }
+
+        const modal = new ModalBuilder()
+          .setCustomId('modal_ap_canal')
+          .setTitle('Editar canal dos painéis');
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId('canal')
+              .setLabel('ID do canal onde serão enviados')
+              .setPlaceholder('Exemplo: 123456789012345678')
+              .setValue(db.ap.canalPainel || '')
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
+
+        return interaction.showModal(modal);
+      }
+
+      // PAINEL AP - ENVIAR PAINÉIS
+      if (interaction.customId === 'ap_enviar_paineis') {
+        if (!somenteAdmin(interaction)) {
+          return interaction.reply({ content: '❌ Apenas administradores.', ephemeral: true });
+        }
+
+        if (!db.ap.canalPainel) {
+          return interaction.reply({
+            content: '❌ Configure primeiro o canal onde os painéis serão enviados.',
+            ephemeral: true
+          });
+        }
+
+        const canal = interaction.guild.channels.cache.get(db.ap.canalPainel);
+
+        if (!canal || canal.type !== ChannelType.GuildText) {
+          return interaction.reply({
+            content: '❌ Canal inválido ou não encontrado.',
+            ephemeral: true
+          });
+        }
+
+        const valores = gerarValoresPainel(db.ap.valorMin, db.ap.valorMax);
+
+        if (valores.length === 0) {
+          return interaction.reply({
+            content: '❌ Valores inválidos. Configure um valor mínimo e máximo corretos.',
+            ephemeral: true
+          });
+        }
+
+        await canal.send(db.ap.mensagem || 'FILAS ON');
+
+        for (const valor of valores) {
+          const filaId = montarIdFila(db.ap.equipe, db.ap.dispositivo, valor);
+
+          db.filas[filaId] = {
+            equipe: normalizarEquipe(db.ap.equipe),
+            dispositivo: normalizarDispositivo(db.ap.dispositivo),
+            valor,
+            jogadores: {}
+          };
+
+          const msg = await canal.send(
+            montarPainelAP({
+              equipe: db.ap.equipe,
+              dispositivo: db.ap.dispositivo,
+              valor,
+              filaId
+            })
+          );
+
+          db.filas[filaId].channelId = canal.id;
+          db.filas[filaId].messageId = msg.id;
+        }
+
+        salvarDB();
+
+        return interaction.reply({
+          content: `✅ ${valores.length} painel(is) de AP enviados em ${canal}.`,
+          ephemeral: true
+        });
+      }
+
+      // PAINEL AP - ENTRAR EM UMA OPÇÃO
+      if (interaction.customId.startsWith('ap_join_')) {
+        const parts = interaction.customId.split('_');
+        const botao = parts.pop().replace(/_/g, ' ');
+        const filaId = parts.slice(2).join('_');
+
+        const fila = obterFila(filaId);
+        fila.jogadores[interaction.user.id] = botao;
+        salvarDB();
+
+        await interaction.update(
+          montarPainelAP({
+            equipe: fila.equipe || db.ap.equipe,
+            dispositivo: fila.dispositivo || db.ap.dispositivo,
+            valor: fila.valor || db.ap.valorMin,
+            filaId
+          })
+        );
+
+        return;
+      }
+
+      // PAINEL AP - SAIR DA FILA
+      if (interaction.customId.startsWith('ap_sair_')) {
+        const filaId = interaction.customId.replace('ap_sair_', '');
+        const fila = obterFila(filaId);
+
+        delete fila.jogadores[interaction.user.id];
+        salvarDB();
+
+        await interaction.update(
+          montarPainelAP({
+            equipe: fila.equipe || db.ap.equipe,
+            dispositivo: fila.dispositivo || db.ap.dispositivo,
+            valor: fila.valor || db.ap.valorMin,
+            filaId
+          })
+        );
+
+        return;
+      }
 
       // CONFIG PIX
       if (interaction.customId === 'config_pix') {
@@ -831,6 +1275,85 @@ client.on('interactionCreate', async interaction => {
 
     // ===== MODAIS =====
     if (interaction.type === InteractionType.ModalSubmit) {
+
+      // SALVAR MENSAGEM DO PAINEL AP
+      if (interaction.customId === 'modal_ap_mensagem') {
+        db.ap.mensagem = interaction.fields.getTextInputValue('mensagem');
+        db.ap.imagem = interaction.fields.getTextInputValue('imagem') || '';
+        salvarDB();
+
+        return interaction.reply({
+          content: '✅ Mensagem e imagem do painel AP salvas com sucesso!',
+          ephemeral: true
+        });
+      }
+
+      // SALVAR EQUIPE DO PAINEL AP
+      if (interaction.customId === 'modal_ap_equipe') {
+        const equipe = normalizarEquipe(interaction.fields.getTextInputValue('equipe'));
+        db.ap.equipe = equipe;
+        salvarDB();
+
+        return interaction.reply({
+          content: `✅ Equipe configurada para **${equipe}**.`,
+          ephemeral: true
+        });
+      }
+
+      // SALVAR DISPOSITIVO DO PAINEL AP
+      if (interaction.customId === 'modal_ap_dispositivo') {
+        const dispositivo = normalizarDispositivo(interaction.fields.getTextInputValue('dispositivo'));
+        db.ap.dispositivo = dispositivo;
+        salvarDB();
+
+        return interaction.reply({
+          content: `✅ Dispositivo configurado para **${dispositivo}**.`,
+          ephemeral: true
+        });
+      }
+
+      // SALVAR VALORES DO PAINEL AP
+      if (interaction.customId === 'modal_ap_valores') {
+        const minimo = Number(interaction.fields.getTextInputValue('minimo').replace(',', '.'));
+        const maximo = Number(interaction.fields.getTextInputValue('maximo').replace(',', '.'));
+
+        if (Number.isNaN(minimo) || Number.isNaN(maximo) || minimo <= 0 || maximo < minimo) {
+          return interaction.reply({
+            content: '❌ Valores inválidos. Exemplo correto: mínimo `0,30` e máximo `100`.',
+            ephemeral: true
+          });
+        }
+
+        db.ap.valorMin = Number(minimo.toFixed(2));
+        db.ap.valorMax = Number(maximo.toFixed(2));
+        salvarDB();
+
+        return interaction.reply({
+          content: `✅ Valores configurados de ${formatarValorBR(db.ap.valorMin)} até ${formatarValorBR(db.ap.valorMax)}.`,
+          ephemeral: true
+        });
+      }
+
+      // SALVAR CANAL DO PAINEL AP
+      if (interaction.customId === 'modal_ap_canal') {
+        const canalId = interaction.fields.getTextInputValue('canal').trim();
+        const canal = interaction.guild.channels.cache.get(canalId);
+
+        if (!canal || canal.type !== ChannelType.GuildText) {
+          return interaction.reply({
+            content: '❌ Canal inválido. Use o ID de um canal de texto.',
+            ephemeral: true
+          });
+        }
+
+        db.ap.canalPainel = canalId;
+        salvarDB();
+
+        return interaction.reply({
+          content: `✅ Canal dos painéis AP configurado para ${canal}.`,
+          ephemeral: true
+        });
+      }
 
       // SALVAR CANAL DO PAINEL DE TICKETS
       if (interaction.customId === 'modal_ticket_canal') {
